@@ -113,7 +113,7 @@ Every subsystem is a **trait** — swap implementations with a config change, ze
 | Subsystem | Trait | Ships with | Extend |
 |-----------|-------|------------|--------|
 | **AI Models** | `Provider` | 22+ providers (OpenRouter, Anthropic, OpenAI, Ollama, Venice, Groq, Mistral, xAI, DeepSeek, Together, Fireworks, Perplexity, Cohere, Bedrock, etc.) | `custom:https://your-api.com` — any OpenAI-compatible API |
-| **Channels** | `Channel` | CLI, Telegram, Discord, Slack, iMessage, Matrix, WhatsApp, Webhook | Any messaging API |
+| **Channels** | `Channel` | CLI, Telegram, Discord, Slack, Email (IMAP/SMTP), iMessage, Matrix, WhatsApp, Webhook | Any messaging API |
 | **Memory** | `Memory` | SQLite with hybrid search (FTS5 + vector cosine similarity), Markdown | Any persistence backend |
 | **Tools** | `Tool` | shell, file_read, file_write, memory_store, memory_recall, memory_forget, browser_open (Brave + allowlist), composio (optional) | Any capability |
 | **Observability** | `Observer` | Noop, Log, Multi | Prometheus, OTel |
@@ -172,7 +172,7 @@ ZeroClaw enforces security at **every layer** — not just the sandbox. It passe
 
 > **Run your own nmap:** `nmap -p 1-65535 <your-host>` — ZeroClaw binds to localhost only, so nothing is exposed unless you explicitly configure a tunnel.
 
-### Channel allowlists (Telegram / Discord / Slack)
+### Channel allowlists (Telegram / Discord / Slack / Email)
 
 Inbound sender policy is now consistent:
 
@@ -187,7 +187,34 @@ Recommended low-friction setup (secure + fast):
 - **Telegram:** allowlist your own `@username` (without `@`) and/or your numeric Telegram user ID.
 - **Discord:** allowlist your own Discord user ID.
 - **Slack:** allowlist your own Slack member ID (usually starts with `U`).
+- **Email:** allowlist exact sender email addresses.
 - Use `"*"` only for temporary open testing.
+
+### Email (IMAP + SMTP) Setup
+
+Email channel uses IMAP polling for inbound messages and SMTP for replies.
+
+```toml
+[channels_config.email]
+imap_host = "imap.gmail.com"
+imap_port = 993
+imap_login = "user@gmail.com"
+imap_password = "app-password"
+imap_starttls = true
+
+smtp_host = "smtp.gmail.com"
+smtp_port = 587
+smtp_login = "user@gmail.com"
+smtp_password = "app-password"
+smtp_starttls = true
+
+from_address = "bot@gmail.com"
+inbox_folder = "INBOX"
+poll_interval_secs = 30
+allowed_senders = ["alice@example.com"] # or ["*"] for all
+```
+
+Tip: for Gmail/Outlook with 2FA, use app passwords.
 
 If you're not sure which identity to use:
 

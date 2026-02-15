@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod discord;
+pub mod email;
 pub mod imessage;
 pub mod matrix;
 pub mod slack;
@@ -9,6 +10,7 @@ pub mod whatsapp;
 
 pub use cli::CliChannel;
 pub use discord::DiscordChannel;
+pub use email::EmailChannel;
 pub use imessage::IMessageChannel;
 pub use matrix::MatrixChannel;
 pub use slack::SlackChannel;
@@ -22,6 +24,8 @@ use crate::providers::{self, Provider};
 use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
+
+const EMAIL_REPLY_META_SEP: &str = "\u{001F}";
 
 /// Maximum characters per injected workspace file (matches `OpenClaw` default).
 const BOOTSTRAP_MAX_CHARS: usize = 20_000;
@@ -268,6 +272,7 @@ pub fn handle_command(command: super::ChannelCommands, config: &Config) -> Resul
                 ("Discord", config.channels_config.discord.is_some()),
                 ("Slack", config.channels_config.slack.is_some()),
                 ("Webhook", config.channels_config.webhook.is_some()),
+                ("Email", config.channels_config.email.is_some()),
                 ("iMessage", config.channels_config.imessage.is_some()),
                 ("Matrix", config.channels_config.matrix.is_some()),
                 ("WhatsApp", config.channels_config.whatsapp.is_some()),
@@ -350,6 +355,28 @@ pub async fn doctor_channels(config: Config) -> Result<()> {
         channels.push((
             "iMessage",
             Arc::new(IMessageChannel::new(im.allowed_contacts.clone())),
+        ));
+    }
+
+    if let Some(ref em) = config.channels_config.email {
+        channels.push((
+            "Email",
+            Arc::new(EmailChannel::new(
+                em.imap_host.clone(),
+                em.imap_port,
+                em.imap_login.clone(),
+                em.imap_password.clone(),
+                em.imap_starttls,
+                em.smtp_host.clone(),
+                em.smtp_port,
+                em.smtp_login.clone(),
+                em.smtp_password.clone(),
+                em.smtp_starttls,
+                em.from_address.clone(),
+                em.inbox_folder.clone(),
+                em.poll_interval_secs,
+                em.allowed_senders.clone(),
+            )),
         ));
     }
 
@@ -519,6 +546,25 @@ pub async fn start_channels(config: Config) -> Result<()> {
         channels.push(Arc::new(IMessageChannel::new(im.allowed_contacts.clone())));
     }
 
+    if let Some(ref em) = config.channels_config.email {
+        channels.push(Arc::new(EmailChannel::new(
+            em.imap_host.clone(),
+            em.imap_port,
+            em.imap_login.clone(),
+            em.imap_password.clone(),
+            em.imap_starttls,
+            em.smtp_host.clone(),
+            em.smtp_port,
+            em.smtp_login.clone(),
+            em.smtp_password.clone(),
+            em.smtp_starttls,
+            em.from_address.clone(),
+            em.inbox_folder.clone(),
+            em.poll_interval_secs,
+            em.allowed_senders.clone(),
+        )));
+    }
+
     if let Some(ref mx) = config.channels_config.matrix {
         channels.push(Arc::new(MatrixChannel::new(
             mx.homeserver.clone(),
@@ -628,7 +674,13 @@ pub async fn start_channels(config: Config) -> Result<()> {
                 // Find the channel that sent this message and reply
                 for ch in &channels {
                     if ch.name() == msg.channel {
-                        if let Err(e) = ch.send(&response, &msg.sender).await {
+                        let recipient = if msg.channel == "email" {
+                            format!("{}{}{}", msg.sender, EMAIL_REPLY_META_SEP, msg.id)
+                        } else {
+                            msg.sender.clone()
+                        };
+
+                        if let Err(e) = ch.send(&response, &recipient).await {
                             eprintln!("  ❌ Failed to reply on {}: {e}", ch.name());
                         }
                         break;
@@ -639,7 +691,13 @@ pub async fn start_channels(config: Config) -> Result<()> {
                 eprintln!("  ❌ LLM error: {e}");
                 for ch in &channels {
                     if ch.name() == msg.channel {
-                        let _ = ch.send(&format!("⚠️ Error: {e}"), &msg.sender).await;
+                        let recipient = if msg.channel == "email" {
+                            format!("{}{}{}", msg.sender, EMAIL_REPLY_META_SEP, msg.id)
+                        } else {
+                            msg.sender.clone()
+                        };
+
+                        let _ = ch.send(&format!("⚠️ Error: {e}"), &recipient).await;
                         break;
                     }
                 }

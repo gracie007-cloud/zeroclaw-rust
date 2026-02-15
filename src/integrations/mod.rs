@@ -160,6 +160,13 @@ fn show_integration_info(config: &Config, name: &str) -> Result<()> {
             println!("    HTTP endpoint for external triggers.");
             println!("    Run: zeroclaw gateway");
         }
+        "Email" => {
+            println!("  Setup:");
+            println!("    1. Run: zeroclaw onboard --interactive");
+            println!("    2. In Channels, choose Email and fill IMAP/SMTP credentials");
+            println!("    3. Start: zeroclaw channel start");
+            println!("    Tip: use app passwords for Gmail/Outlook accounts with 2FA.");
+        }
         _ => {
             if status == IntegrationStatus::ComingSoon {
                 println!("  This integration is planned. Stay tuned!");

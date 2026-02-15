@@ -515,6 +515,7 @@ pub struct ChannelsConfig {
     pub discord: Option<DiscordConfig>,
     pub slack: Option<SlackConfig>,
     pub webhook: Option<WebhookConfig>,
+    pub email: Option<EmailConfig>,
     pub imessage: Option<IMessageConfig>,
     pub matrix: Option<MatrixConfig>,
     pub whatsapp: Option<WhatsAppConfig>,
@@ -528,11 +529,43 @@ impl Default for ChannelsConfig {
             discord: None,
             slack: None,
             webhook: None,
+            email: None,
             imessage: None,
             matrix: None,
             whatsapp: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailConfig {
+    pub imap_host: String,
+    pub imap_port: u16,
+    pub imap_login: String,
+    pub imap_password: String,
+    #[serde(default = "default_true")]
+    pub imap_starttls: bool,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_login: String,
+    pub smtp_password: String,
+    #[serde(default = "default_true")]
+    pub smtp_starttls: bool,
+    pub from_address: String,
+    #[serde(default = "default_inbox_folder")]
+    pub inbox_folder: String,
+    #[serde(default = "default_email_poll_interval_secs")]
+    pub poll_interval_secs: u64,
+    #[serde(default)]
+    pub allowed_senders: Vec<String>,
+}
+
+fn default_inbox_folder() -> String {
+    "INBOX".into()
+}
+
+fn default_email_poll_interval_secs() -> u64 {
+    30
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -722,6 +755,7 @@ mod tests {
         assert!(c.cli);
         assert!(c.telegram.is_none());
         assert!(c.discord.is_none());
+        assert!(c.email.is_none());
     }
 
     // ── Serde round-trip ─────────────────────────────────────
@@ -763,6 +797,7 @@ mod tests {
                 discord: None,
                 slack: None,
                 webhook: None,
+                email: None,
                 imessage: None,
                 matrix: None,
                 whatsapp: None,
@@ -968,6 +1003,7 @@ default_temperature = 0.7
             discord: None,
             slack: None,
             webhook: None,
+            email: None,
             imessage: Some(IMessageConfig {
                 allowed_contacts: vec!["+1".into()],
             }),
@@ -990,8 +1026,56 @@ default_temperature = 0.7
     #[test]
     fn channels_config_default_has_no_imessage_matrix() {
         let c = ChannelsConfig::default();
+        assert!(c.email.is_none());
         assert!(c.imessage.is_none());
         assert!(c.matrix.is_none());
+    }
+
+    #[test]
+    fn email_config_toml_roundtrip() {
+        let ec = EmailConfig {
+            imap_host: "imap.example.com".into(),
+            imap_port: 993,
+            imap_login: "user@example.com".into(),
+            imap_password: "imap-pass".into(),
+            imap_starttls: true,
+            smtp_host: "smtp.example.com".into(),
+            smtp_port: 587,
+            smtp_login: "user@example.com".into(),
+            smtp_password: "smtp-pass".into(),
+            smtp_starttls: true,
+            from_address: "bot@example.com".into(),
+            inbox_folder: "INBOX".into(),
+            poll_interval_secs: 30,
+            allowed_senders: vec!["alice@example.com".into()],
+        };
+        let toml_str = toml::to_string(&ec).unwrap();
+        let parsed: EmailConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.imap_host, "imap.example.com");
+        assert_eq!(parsed.smtp_host, "smtp.example.com");
+        assert_eq!(parsed.from_address, "bot@example.com");
+        assert_eq!(parsed.allowed_senders, vec!["alice@example.com"]);
+    }
+
+    #[test]
+    fn email_config_defaults_for_optional_fields() {
+        let toml_str = r#"
+imap_host = "imap.example.com"
+imap_port = 993
+imap_login = "user@example.com"
+imap_password = "imap-pass"
+smtp_host = "smtp.example.com"
+smtp_port = 587
+smtp_login = "user@example.com"
+smtp_password = "smtp-pass"
+from_address = "bot@example.com"
+"#;
+        let parsed: EmailConfig = toml::from_str(toml_str).unwrap();
+        assert!(parsed.imap_starttls);
+        assert!(parsed.smtp_starttls);
+        assert_eq!(parsed.inbox_folder, "INBOX");
+        assert_eq!(parsed.poll_interval_secs, 30);
+        assert!(parsed.allowed_senders.is_empty());
     }
 
     // ── Edge cases: serde(default) for allowed_users ─────────
@@ -1122,6 +1206,7 @@ channel_id = "C123"
             discord: None,
             slack: None,
             webhook: None,
+            email: None,
             imessage: None,
             matrix: None,
             whatsapp: Some(WhatsAppConfig {

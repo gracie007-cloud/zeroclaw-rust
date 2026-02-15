@@ -614,9 +614,15 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
         },
         IntegrationEntry {
             name: "Email",
-            description: "Send & read emails",
+            description: "IMAP inbox + SMTP replies",
             category: IntegrationCategory::Social,
-            status_fn: |_| IntegrationStatus::ComingSoon,
+            status_fn: |c| {
+                if c.channels_config.email.is_some() {
+                    IntegrationStatus::Active
+                } else {
+                    IntegrationStatus::Available
+                }
+            },
         },
         // ── Platforms ───────────────────────────────────────────
         IntegrationEntry {
@@ -667,7 +673,7 @@ pub fn all_integrations() -> Vec<IntegrationEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::schema::{IMessageConfig, MatrixConfig, TelegramConfig};
+    use crate::config::schema::{EmailConfig, IMessageConfig, MatrixConfig, TelegramConfig};
     use crate::config::Config;
 
     #[test]
@@ -790,6 +796,44 @@ mod tests {
         let mx = entries.iter().find(|e| e.name == "Matrix").unwrap();
         assert!(matches!(
             (mx.status_fn)(&config),
+            IntegrationStatus::Available
+        ));
+    }
+
+    #[test]
+    fn email_active_when_configured() {
+        let mut config = Config::default();
+        config.channels_config.email = Some(EmailConfig {
+            imap_host: "imap.example.com".into(),
+            imap_port: 993,
+            imap_login: "user@example.com".into(),
+            imap_password: "secret".into(),
+            imap_starttls: true,
+            smtp_host: "smtp.example.com".into(),
+            smtp_port: 587,
+            smtp_login: "user@example.com".into(),
+            smtp_password: "secret".into(),
+            smtp_starttls: true,
+            from_address: "bot@example.com".into(),
+            inbox_folder: "INBOX".into(),
+            poll_interval_secs: 30,
+            allowed_senders: vec!["*".into()],
+        });
+        let entries = all_integrations();
+        let email = entries.iter().find(|e| e.name == "Email").unwrap();
+        assert!(matches!(
+            (email.status_fn)(&config),
+            IntegrationStatus::Active
+        ));
+    }
+
+    #[test]
+    fn email_available_when_not_configured() {
+        let config = Config::default();
+        let entries = all_integrations();
+        let email = entries.iter().find(|e| e.name == "Email").unwrap();
+        assert!(matches!(
+            (email.status_fn)(&config),
             IntegrationStatus::Available
         ));
     }

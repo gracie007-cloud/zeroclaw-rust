@@ -1,7 +1,7 @@
 use crate::config::schema::WhatsAppConfig;
 use crate::config::{
     AutonomyConfig, BrowserConfig, ChannelsConfig, ComposioConfig, Config, DiscordConfig,
-    HeartbeatConfig, IMessageConfig, MatrixConfig, MemoryConfig, ObservabilityConfig,
+    EmailConfig, HeartbeatConfig, IMessageConfig, MatrixConfig, MemoryConfig, ObservabilityConfig,
     RuntimeConfig, SecretsConfig, SlackConfig, TelegramConfig, WebhookConfig,
 };
 use anyhow::{Context, Result};
@@ -124,6 +124,7 @@ pub fn run_wizard() -> Result<Config> {
     let has_channels = config.channels_config.telegram.is_some()
         || config.channels_config.discord.is_some()
         || config.channels_config.slack.is_some()
+        || config.channels_config.email.is_some()
         || config.channels_config.imessage.is_some()
         || config.channels_config.matrix.is_some();
 
@@ -179,6 +180,7 @@ pub fn run_channels_repair_wizard() -> Result<Config> {
     let has_channels = config.channels_config.telegram.is_some()
         || config.channels_config.discord.is_some()
         || config.channels_config.slack.is_some()
+        || config.channels_config.email.is_some()
         || config.channels_config.imessage.is_some()
         || config.channels_config.matrix.is_some();
 
@@ -946,6 +948,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
         discord: None,
         slack: None,
         webhook: None,
+        email: None,
         imessage: None,
         matrix: None,
         whatsapp: None,
@@ -975,6 +978,14 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     "✅ connected"
                 } else {
                     "— connect your bot"
+                }
+            ),
+            format!(
+                "Email      {}",
+                if config.email.is_some() {
+                    "✅ connected"
+                } else {
+                    "— IMAP + SMTP"
                 }
             ),
             format!(
@@ -1015,7 +1026,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
         let choice = Select::new()
             .with_prompt("  Connect a channel (or Done to continue)")
             .items(&options)
-            .default(7)
+            .default(8)
             .interact()?;
 
         match choice {
@@ -1313,6 +1324,102 @@ fn setup_channels() -> Result<ChannelsConfig> {
                 });
             }
             3 => {
+                // ── Email ──
+                println!();
+                println!(
+                    "  {} {}",
+                    style("Email Setup").white().bold(),
+                    style("— IMAP inbox + SMTP replies").dim()
+                );
+                print_bullet("Works with providers like Gmail, Outlook, Fastmail, Proton Bridge.");
+                print_bullet("Use app passwords when your provider requires 2FA.");
+                println!();
+
+                let imap_host: String = Input::new()
+                    .with_prompt("  IMAP host (e.g. imap.gmail.com)")
+                    .interact_text()?;
+                let imap_port: String = Input::new()
+                    .with_prompt("  IMAP port")
+                    .default("993".into())
+                    .interact_text()?;
+                let imap_login: String =
+                    Input::new().with_prompt("  IMAP login").interact_text()?;
+                let imap_password: String = Input::new()
+                    .with_prompt("  IMAP password / app password")
+                    .interact_text()?;
+                let imap_starttls = Confirm::new()
+                    .with_prompt("  IMAP STARTTLS?")
+                    .default(true)
+                    .interact()?;
+
+                let smtp_host: String = Input::new()
+                    .with_prompt("  SMTP host (e.g. smtp.gmail.com)")
+                    .interact_text()?;
+                let smtp_port: String = Input::new()
+                    .with_prompt("  SMTP port")
+                    .default("587".into())
+                    .interact_text()?;
+                let smtp_login: String =
+                    Input::new().with_prompt("  SMTP login").interact_text()?;
+                let smtp_password: String = Input::new()
+                    .with_prompt("  SMTP password / app password")
+                    .interact_text()?;
+                let smtp_starttls = Confirm::new()
+                    .with_prompt("  SMTP STARTTLS?")
+                    .default(true)
+                    .interact()?;
+
+                let from_address: String = Input::new()
+                    .with_prompt("  From address for replies (e.g. bot@example.com)")
+                    .interact_text()?;
+                let inbox_folder: String = Input::new()
+                    .with_prompt("  Inbox folder")
+                    .default("INBOX".into())
+                    .interact_text()?;
+                let poll_interval_secs: String = Input::new()
+                    .with_prompt("  Poll interval in seconds")
+                    .default("30".into())
+                    .interact_text()?;
+
+                let allowed_senders_str: String = Input::new()
+                    .with_prompt("  Allowed senders (comma-separated emails, or * for all)")
+                    .allow_empty(true)
+                    .interact_text()?;
+                let allowed_senders = if allowed_senders_str.trim() == "*" {
+                    vec!["*".into()]
+                } else {
+                    allowed_senders_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                };
+
+                if allowed_senders.is_empty() {
+                    println!(
+                        "  {} No senders allowlisted — inbound email will be denied until you add senders or '*'.",
+                        style("⚠").yellow().bold()
+                    );
+                }
+
+                config.email = Some(EmailConfig {
+                    imap_host: imap_host.trim().to_string(),
+                    imap_port: imap_port.parse().unwrap_or(993),
+                    imap_login: imap_login.trim().to_string(),
+                    imap_password,
+                    imap_starttls,
+                    smtp_host: smtp_host.trim().to_string(),
+                    smtp_port: smtp_port.parse().unwrap_or(587),
+                    smtp_login: smtp_login.trim().to_string(),
+                    smtp_password,
+                    smtp_starttls,
+                    from_address: from_address.trim().to_string(),
+                    inbox_folder: inbox_folder.trim().to_string(),
+                    poll_interval_secs: poll_interval_secs.parse().unwrap_or(30),
+                    allowed_senders,
+                });
+            }
+            4 => {
                 // ── iMessage ──
                 println!();
                 println!(
@@ -1356,7 +1463,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     style(&contacts_str).cyan()
                 );
             }
-            4 => {
+            5 => {
                 // ── Matrix ──
                 println!();
                 println!(
@@ -1436,7 +1543,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     allowed_users,
                 });
             }
-            5 => {
+            6 => {
                 // ── WhatsApp ──
                 println!();
                 println!(
@@ -1520,7 +1627,7 @@ fn setup_channels() -> Result<ChannelsConfig> {
                     allowed_numbers,
                 });
             }
-            6 => {
+            7 => {
                 // ── Webhook ──
                 println!();
                 println!(
@@ -1568,6 +1675,9 @@ fn setup_channels() -> Result<ChannelsConfig> {
     }
     if config.slack.is_some() {
         active.push("Slack");
+    }
+    if config.email.is_some() {
+        active.push("Email");
     }
     if config.imessage.is_some() {
         active.push("iMessage");
@@ -2029,6 +2139,7 @@ fn print_summary(config: &Config) {
     let has_channels = config.channels_config.telegram.is_some()
         || config.channels_config.discord.is_some()
         || config.channels_config.slack.is_some()
+        || config.channels_config.email.is_some()
         || config.channels_config.imessage.is_some()
         || config.channels_config.matrix.is_some();
 
@@ -2085,6 +2196,9 @@ fn print_summary(config: &Config) {
     }
     if config.channels_config.slack.is_some() {
         channels.push("Slack");
+    }
+    if config.channels_config.email.is_some() {
+        channels.push("Email");
     }
     if config.channels_config.imessage.is_some() {
         channels.push("iMessage");
